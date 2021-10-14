@@ -3,6 +3,7 @@
 # external packages
 import prometheus_client
 import requests
+import psutil
 
 # internal packages
 import datetime
@@ -24,6 +25,9 @@ API_BASE_URL = os.environ.get('API_BASE_URL', 'https://api.helium.io/v1')
 
 # prometheus exporter types Gauge,Counter,Summary,Histogram,Info and Enum
 SCRAPE_TIME = prometheus_client.Summary('validator_scrape_time', 'Time spent collecting miner data')
+SYSTEM_USAGE = prometheus_client.Gauge('system_usage',
+                                       'Hold current system resource usage',
+                                       ['resource_type','validator_name'])
 CHAIN_STATS = prometheus_client.Gauge('chain_stats',
                               'Stats about the global chain', ['resource_type'])
 VAL = prometheus_client.Gauge('validator_height',
@@ -75,6 +79,16 @@ def stats(miner: MinerJSONRPC):
         # to attempt to proceed without it.
         log.error("can't get validator's name")
         return
+
+
+    # collect total cpu and memory usage. Might want to consider just the docker
+    # container with something like cadvisor instead
+    SYSTEM_USAGE.labels('CPU', name).set(psutil.cpu_percent())
+    SYSTEM_USAGE.labels('Memory', name).set(psutil.virtual_memory()[2])
+#    SYSTEM_USAGE.labels('CPU-Steal', name).set(psutil.cpu_times_percent().steal)
+    SYSTEM_USAGE.labels('Disk Used', name).set(float(psutil.disk_usage('/').used) / float(psutil.disk_usage('/').total))
+    SYSTEM_USAGE.labels('Disk Free', name).set(float(psutil.disk_usage('/').free) / float(psutil.disk_usage('/').total))
+    SYSTEM_USAGE.labels('Process-Count', name).set(sum(1 for proc in psutil.process_iter()))
 
     #
     # Safely try to obtain as many items as possible.
