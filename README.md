@@ -68,6 +68,7 @@ The following have valid defaults, but you can change them:
 ```
 UPDATE_PERIOD  # seconds between scrapes, int
 VALIDATOR_CONTAINER_NAME # eg 'validator', string
-API_BASE_URL # URL for api access, string. For testnet, set to "https://testnet-api.helium.wtf/v1"
-ENABLE_RPC # opt in to using the RPC API with a truthy value (defaults to falsey value until `exec` calls are fully replaced).
+VALIDATOR_JSONRPC_ADDRESS # address to call jsonrpc methods, default: http://localhost:4467
+MINER_EXPORTER_PORT # port which miner_exporter listens on, default: 9825
+COLLECT_SYSTEM_USAGE # boolean, default: False
 ```
