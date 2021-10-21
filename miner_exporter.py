@@ -51,8 +51,8 @@ SESSIONS = prometheus_client.Gauge('validator_sessions',
 LEDGER_PENALTY = prometheus_client.Gauge('validator_ledger',
                               'Validator performance metrics ',
                              ['resource_type', 'subtype','validator_name'])
-VALIDATOR_VERSION = prometheus_client.Info('validator_version',
-                              'Version number of the miner container',['validator_name'])
+VALIDATOR_VERSION = prometheus_client.Gauge('validator_version',
+                              'Version number of the miner container',['validator_name'],)
 BALANCE = prometheus_client.Gauge('validator_api_balance',
                               'Balance of the validator owner account',['validator_name'])
 
@@ -85,7 +85,7 @@ def stats(miner: MinerJSONRPC):
     # container with something like cadvisor instead
     SYSTEM_USAGE.labels('CPU', name).set(psutil.cpu_percent())
     SYSTEM_USAGE.labels('Memory', name).set(psutil.virtual_memory()[2])
-#    SYSTEM_USAGE.labels('CPU-Steal', name).set(psutil.cpu_times_percent().steal)
+    SYSTEM_USAGE.labels('CPU-Steal', name).set(psutil.cpu_times_percent().steal)
     SYSTEM_USAGE.labels('Disk Used', name).set(float(psutil.disk_usage('/').used) / float(psutil.disk_usage('/').total))
     SYSTEM_USAGE.labels('Disk Free', name).set(float(psutil.disk_usage('/').free) / float(psutil.disk_usage('/').total))
     SYSTEM_USAGE.labels('Process-Count', name).set(sum(1 for proc in psutil.process_iter()))
@@ -174,6 +174,7 @@ def stats(miner: MinerJSONRPC):
         LEDGER_PENALTY.labels('ledger_penalties', 'performance', my_label).set(this_validator['performance_penalty'])
         LEDGER_PENALTY.labels('ledger_penalties', 'total', my_label).set(this_validator['total_penalty'])
         BLOCKAGE.labels('last_heartbeat', my_label).set(this_validator['last_heartbeat'])
+        VALIDATOR_VERSION.labels(my_label).set(this_validator['version'])
 
     # Update HBBFT performance stats, if in CG
     this_hbbft_perf = None
