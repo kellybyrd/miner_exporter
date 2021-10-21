@@ -18,28 +18,14 @@ logging.basicConfig(format="%(filename)s:%(funcName)s:%(lineno)d:%(levelname)s\t
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-# time to sleep between scrapes
+# get variable
 UPDATE_PERIOD = int(os.environ.get('UPDATE_PERIOD', 30))
-# for testnet, https://testnet-api.helium.wtf/v1
-API_BASE_URL = os.environ.get('API_BASE_URL', 'https://api.helium.io/v1')
-
-# Gather the ledger penalities for all, instead of just "this" validator. When in this
-# mode all validators from `miner validator ledger` with a penalty >0.0 will be included.
-# The >0 constraint is just to keep data and traffic smaller.
-ALL_PENALTIES = os.environ.get('ALL_PENALTIES', 0)
-
-# use the RPC calls where available. This means you have your RPC port open.
-# Once all of the exec calls are replaced we can enable this by default.
-ENABLE_RPC = os.environ.get('ENABLE_RPC', 0)
+MINER_EXPORTER_PORT = int(os.environ.get('MINER_EXPORTER_PORT', 9825)) # 9-VAL on your phone
+VALIDATOR_JSONRPC_ADDRESS = os.environ.get('VALIDATOR_JSONRPC_ADDRESS', 'http://localhost:4467/')
+COLLECT_SYSTEM_USAGE = os.environ.get('COLLECT_SYSTEM_USAGE', False)
 
 # prometheus exporter types Gauge,Counter,Summary,Histogram,Info and Enum
 SCRAPE_TIME = prometheus_client.Summary('validator_scrape_time', 'Time spent collecting miner data')
-VALIDATOR_DISK_USAGE = prometheus_client.Gauge('validator_disk_usage_bytes',
-                                       'Disk used by validator directory/volume',
-                                       ['validator_name'])
-SYSTEM_USAGE = prometheus_client.Gauge('system_usage',
-                                       'Hold current system resource usage',
-                                       ['resource_type','validator_name'])
 CHAIN_STATS = prometheus_client.Gauge('chain_stats',
                               'Stats about the global chain', ['resource_type'])
 VAL = prometheus_client.Gauge('validator_height',
@@ -67,9 +53,16 @@ VALIDATOR_VERSION = prometheus_client.Gauge('validator_version',
                               'Version number of the miner container',['validator_name'],)
 BALANCE = prometheus_client.Gauge('validator_api_balance',
                               'Balance of the validator owner account',['validator_name'])
+if COLLECT_SYSTEM_USAGE:
+    SYSTEM_USAGE = prometheus_client.Gauge('system_usage',
+                                           'Hold current system resource usage',
+                                           ['resource_type','hostname'])
 
 # Last known HBBFT performance stats for this validator.
 hval = {}
+
+# hostname of machine for use in system stats
+hostname = os.uname()[1]
 
 # Decorate function with metric.
 @SCRAPE_TIME.time()
@@ -92,15 +85,15 @@ def stats(miner: MinerJSONRPC):
         log.error("can't get validator's name")
         return
 
-
-    # collect total cpu and memory usage. Might want to consider just the docker
-    # container with something like cadvisor instead
-    SYSTEM_USAGE.labels('CPU', name).set(psutil.cpu_percent())
-    SYSTEM_USAGE.labels('Memory', name).set(psutil.virtual_memory()[2])
-    SYSTEM_USAGE.labels('CPU-Steal', name).set(psutil.cpu_times_percent().steal)
-    SYSTEM_USAGE.labels('Disk Used', name).set(float(psutil.disk_usage('/').used) / float(psutil.disk_usage('/').total))
-    SYSTEM_USAGE.labels('Disk Free', name).set(float(psutil.disk_usage('/').free) / float(psutil.disk_usage('/').total))
-    SYSTEM_USAGE.labels('Process-Count', name).set(sum(1 for proc in psutil.process_iter()))
+    if COLLECT_SYSTEM_USAGE:
+        # collect total cpu and memory usage. Might want to consider just the docker
+        # container with something like cadvisor instead
+        SYSTEM_USAGE.labels('CPU', hostname).set(psutil.cpu_percent())
+        SYSTEM_USAGE.labels('Memory', hostname).set(psutil.virtual_memory()[2])
+        SYSTEM_USAGE.labels('CPU-Steal', hostname).set(psutil.cpu_times_percent().steal)
+        SYSTEM_USAGE.labels('Disk Used', hostname).set(float(psutil.disk_usage('/').used) / float(psutil.disk_usage('/').total))
+        SYSTEM_USAGE.labels('Disk Free', hostname).set(float(psutil.disk_usage('/').free) / float(psutil.disk_usage('/').total))
+        SYSTEM_USAGE.labels('Process-Count', hostname).set(sum(1 for proc in psutil.process_iter()))
 
     #
     # Safely try to obtain as many items as possible.
@@ -227,8 +220,8 @@ def stats(miner: MinerJSONRPC):
 
 
 if __name__ == '__main__':
-  prometheus_client.start_http_server(9825) # 9-VAL on your phone
-  miner = MinerJSONRPC('http://localhost:4467/')
+  prometheus_client.start_http_server(MINER_EXPORTER_PORT)
+  miner = MinerJSONRPC(VALIDATOR_JSONRPC_ADDRESS)
   while True:
     #log.warning("starting loop.")
     try:
@@ -236,6 +229,6 @@ if __name__ == '__main__':
     except ValueError as ex:
       log.error(f"stats loop failed.", exc_info=ex)
 
-    # sleep 30 seconds
+    # sleep
     time.sleep(UPDATE_PERIOD)
 
