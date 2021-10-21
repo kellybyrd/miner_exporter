@@ -23,8 +23,20 @@ UPDATE_PERIOD = int(os.environ.get('UPDATE_PERIOD', 30))
 # for testnet, https://testnet-api.helium.wtf/v1
 API_BASE_URL = os.environ.get('API_BASE_URL', 'https://api.helium.io/v1')
 
+# Gather the ledger penalities for all, instead of just "this" validator. When in this
+# mode all validators from `miner validator ledger` with a penalty >0.0 will be included.
+# The >0 constraint is just to keep data and traffic smaller.
+ALL_PENALTIES = os.environ.get('ALL_PENALTIES', 0)
+
+# use the RPC calls where available. This means you have your RPC port open.
+# Once all of the exec calls are replaced we can enable this by default.
+ENABLE_RPC = os.environ.get('ENABLE_RPC', 0)
+
 # prometheus exporter types Gauge,Counter,Summary,Histogram,Info and Enum
 SCRAPE_TIME = prometheus_client.Summary('validator_scrape_time', 'Time spent collecting miner data')
+VALIDATOR_DISK_USAGE = prometheus_client.Gauge('validator_disk_usage_bytes',
+                                       'Disk used by validator directory/volume',
+                                       ['validator_name'])
 SYSTEM_USAGE = prometheus_client.Gauge('system_usage',
                                        'Hold current system resource usage',
                                        ['resource_type','validator_name'])
