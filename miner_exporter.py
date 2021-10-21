@@ -51,7 +51,7 @@ LEDGER_PENALTY = prometheus_client.Gauge('validator_ledger',
                              ['resource_type', 'subtype','validator_name'])
 VALIDATOR_VERSION = prometheus_client.Gauge('validator_version',
                               'Version number of the miner container',['validator_name'],)
-BALANCE = prometheus_client.Gauge('validator_api_balance',
+BALANCE = prometheus_client.Gauge('account_balance',
                               'Balance of the validator owner account',['validator_name'])
 if COLLECT_SYSTEM_USAGE:
     SYSTEM_USAGE = prometheus_client.Gauge('system_usage',
