@@ -49,7 +49,7 @@ SESSIONS = prometheus_client.Gauge('validator_sessions',
 LEDGER_PENALTY = prometheus_client.Gauge('validator_ledger',
                               'Validator performance metrics ',
                              ['resource_type', 'subtype','validator_name'])
-VALIDATOR_VERSION = prometheus_client.Gauge('validator_version',
+VALIDATOR_VERSION = prometheus_client.Info('validator_version',
                               'Version number of the miner container',['validator_name'],)
 BALANCE = prometheus_client.Gauge('account_balance',
                               'Balance of the validator owner account',['validator_name'])
@@ -128,6 +128,12 @@ def stats(miner: MinerJSONRPC):
         except:
             log.error("owner balance fetch failure")
 
+    version = None
+    try:
+        version = miner.version()
+    except:
+        log.error("version fetch error")
+
     block_age = None
     try:
         block_age = miner.block_age()
@@ -173,13 +179,15 @@ def stats(miner: MinerJSONRPC):
     if block_age is not None:
         BLOCKAGE.labels('BlockAge', my_label).set(block_age)
 
+    if version is not None:
+        VALIDATOR_VERSION.labels(my_label).info({'version':version})
+
     if this_validator is not None:
         LEDGER_PENALTY.labels('ledger_penalties', 'tenure', my_label).set(this_validator['tenure_penalty'])
         LEDGER_PENALTY.labels('ledger_penalties', 'dkg', my_label).set(this_validator['dkg_penalty'])
         LEDGER_PENALTY.labels('ledger_penalties', 'performance', my_label).set(this_validator['performance_penalty'])
         LEDGER_PENALTY.labels('ledger_penalties', 'total', my_label).set(this_validator['total_penalty'])
         BLOCKAGE.labels('last_heartbeat', my_label).set(this_validator['last_heartbeat'])
-        VALIDATOR_VERSION.labels(my_label).set(this_validator['version'])
 
     # Update HBBFT performance stats, if in CG
     this_hbbft_perf = None

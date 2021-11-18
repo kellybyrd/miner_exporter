@@ -47,6 +47,10 @@ class MinerJSONRPC:
         result = self.rpc_call('info_name')
         return result['name']
 
+    def version(self) -> str:
+        result = self.rpc_call('info_version')
+        return result['version']
+
     def block_age(self) -> int:
         return self.rpc_call('info_block_age')['block_age']
 
