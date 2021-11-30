@@ -23,6 +23,10 @@ UPDATE_PERIOD = int(os.environ.get('UPDATE_PERIOD', 30))
 MINER_EXPORTER_PORT = int(os.environ.get('MINER_EXPORTER_PORT', 9825)) # 9-VAL on your phone
 VALIDATOR_JSONRPC_ADDRESS = os.environ.get('VALIDATOR_JSONRPC_ADDRESS', 'http://localhost:4467/')
 COLLECT_SYSTEM_USAGE = os.environ.get('COLLECT_SYSTEM_USAGE', False)
+# Gather the ledger penalities for all, instead of just "this" validator. This is a large
+# collection, so plan accordingly.
+ALL_PENALTIES = os.environ.get('ALL_PENALTIES', 0)
+
 
 # prometheus exporter types Gauge,Counter,Summary,Histogram,Info and Enum
 SCRAPE_TIME = prometheus_client.Summary('validator_scrape_time', 'Time spent collecting miner data')
@@ -111,8 +115,16 @@ def stats(miner: MinerJSONRPC):
         log.error("in consensus fetch failure")
 
     this_validator = None
+    penalty_ledger = None
     try:
-        this_validator = miner.ledger_validators(address=addr)
+        if ALL_PENALTIES:
+            penalty_ledger = miner.ledger_validators()
+            # turn a list of dicts into a dict of dicts, indexed on the angry-purple-tiger
+            penalty_ledger = {item['name']:item for item in miner.ledger_validators()}
+        else:
+            penalty_ledger = {addr: miner.ledger_validators(address=addr)}
+
+        this_validator = penalty_ledger[addr]
     except:
         log.error("validator fetch failure")
 
@@ -182,12 +194,13 @@ def stats(miner: MinerJSONRPC):
     if version is not None:
         VALIDATOR_VERSION.labels(my_label).info({'version':version})
 
-    if this_validator is not None:
-        LEDGER_PENALTY.labels('ledger_penalties', 'tenure', my_label).set(this_validator['tenure_penalty'])
-        LEDGER_PENALTY.labels('ledger_penalties', 'dkg', my_label).set(this_validator['dkg_penalty'])
-        LEDGER_PENALTY.labels('ledger_penalties', 'performance', my_label).set(this_validator['performance_penalty'])
-        LEDGER_PENALTY.labels('ledger_penalties', 'total', my_label).set(this_validator['total_penalty'])
-        BLOCKAGE.labels('last_heartbeat', my_label).set(this_validator['last_heartbeat'])
+    if penalty_ledger is not None:
+        for name, ledger_entry in penalty_ledger.items():
+            LEDGER_PENALTY.labels('ledger_penalties', 'tenure', name).set(ledger_entry['tenure_penalty'])
+            LEDGER_PENALTY.labels('ledger_penalties', 'dkg', name).set(ledger_entry['dkg_penalty'])
+            LEDGER_PENALTY.labels('ledger_penalties', 'performance', name).set(ledger_entry['performance_penalty'])
+            LEDGER_PENALTY.labels('ledger_penalties', 'total', name).set(ledger_entry['total_penalty'])
+            BLOCKAGE.labels('last_heartbeat', name).set(ledger_entry['last_heartbeat'])
 
     # Update HBBFT performance stats, if in CG
     this_hbbft_perf = None
