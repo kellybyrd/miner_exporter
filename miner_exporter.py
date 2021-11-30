@@ -18,17 +18,16 @@ logging.basicConfig(format="%(filename)s:%(funcName)s:%(lineno)d:%(levelname)s\t
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-# get variable
+# get options
 UPDATE_PERIOD = int(os.environ.get('UPDATE_PERIOD', 30))
 MINER_EXPORTER_PORT = int(os.environ.get('MINER_EXPORTER_PORT', 9825)) # 9-VAL on your phone
 VALIDATOR_JSONRPC_ADDRESS = os.environ.get('VALIDATOR_JSONRPC_ADDRESS', 'http://localhost:4467/')
-
 COLLECT_SYSTEM_USAGE = os.environ.get('COLLECT_SYSTEM_USAGE', "").lower() in ("true", "t", "1", "y", "yes")
-ALL_HBBFT = os.environ.get('ALL_HBBFT', "").lower() in ("true", "t", "1", "y", "yes")
-# Gather the ledger penalities for all, instead of just "this" validator. This is a large
-# collection, so plan accordingly.
-ALL_PENALTIES = os.environ.get('ALL_PENALTIES', "").lower() in ("true", "t", "1", "y", "yes")
 
+# gather metrics for all validators, instead of just "this" validator. This is a large
+# collection, so plan accordingly.
+ALL_HBBFT = os.environ.get('ALL_HBBFT', "").lower() in ("true", "t", "1", "y", "yes")
+ALL_PENALTIES = os.environ.get('ALL_PENALTIES', "").lower() in ("true", "t", "1", "y", "yes")
 
 # prometheus exporter types Gauge,Counter,Summary,Histogram,Info and Enum
 SCRAPE_TIME = prometheus_client.Summary('validator_scrape_time', 'Time spent collecting miner data')
@@ -42,7 +41,10 @@ INCON = prometheus_client.Gauge('validator_inconsensus',
                               ['validator_name'])
 BLOCKAGE = prometheus_client.Gauge('validator_block_age',
                               'Age of the current block',
-                             ['resource_type','validator_name'])
+                             ['validator_name'])
+HEARTBEAT = prometheus_client.Gauge('validator_last_heartbeat',
+                              'Blocks since last validator heartbeat',
+                             ['validator_name','validator_address'])
 HBBFT_PERF = prometheus_client.Gauge('validator_hbbft_perf',
                               'HBBFT performance metrics from perf, only applies when in CG',
                              ['resource_type','subtype','validator_name'])
@@ -54,7 +56,7 @@ SESSIONS = prometheus_client.Gauge('validator_sessions',
                              ['resource_type','validator_name'])
 LEDGER_PENALTY = prometheus_client.Gauge('validator_ledger',
                               'Validator performance metrics ',
-                             ['resource_type', 'subtype','validator_name'])
+                             ['resource_type', 'subtype','validator_name', 'validator_address'])
 VALIDATOR_VERSION = prometheus_client.Info('validator_version',
                               'Version number of the miner container',['validator_name'],)
 BALANCE = prometheus_client.Gauge('account_balance',
@@ -119,7 +121,7 @@ def stats(miner: MinerJSONRPC):
             penalty_ledger = miner.ledger_validators()
             # Turn a list of dicts into a dict of dicts, indexed on the angry-purple-tiger.
             # While doing this, keep only staked validators.
-            penalty_ledger = {v['name']:v for v in miner.ledger_validators() if v['status'] == 'staked'}
+            penalty_ledger = {v['address']:v for v in miner.ledger_validators() if v['status'] == 'staked'}
         else:
             penalty_ledger = {addr: miner.ledger_validators(address=addr)}
 
@@ -166,44 +168,42 @@ def stats(miner: MinerJSONRPC):
     # Parse results, update gauges.
     #
 
-    # Use the validator name as the label for all validator-
-    # related metrics
-    my_label = name
-
     if height_info is not None:
         # If `sync_height` is present then the validator is
         # syncing and behind, otherwise it is in sync.
         chain_height = height_info['height']
         val_height = height_info.get('sync_height', chain_height)
 
-        VAL.labels('Height', my_label).set(val_height)
-        # TODO, consider getting this from the API
+        VAL.labels('Height', name).set(val_height)
         CHAIN_STATS.labels('Height').set(chain_height)
 
     if in_consensus is not None:
-        INCON.labels(my_label).set(in_consensus)
+        INCON.labels(name).set(in_consensus)
 
     if balance is not None:
-        BALANCE.labels(my_label).set(balance)
+        BALANCE.labels(name).set(balance)
 
     if block_age is not None:
-        BLOCKAGE.labels('BlockAge', my_label).set(block_age)
+        BLOCKAGE.labels(name).set(block_age)
 
     if version is not None:
-        VALIDATOR_VERSION.labels(my_label).info({'version':version})
+        VALIDATOR_VERSION.labels(name).info({'version':version})
 
     if penalty_ledger is not None:
-        for name, ledger_entry in penalty_ledger.items():
-            LEDGER_PENALTY.labels('ledger_penalties', 'tenure', name).set(ledger_entry['tenure_penalty'])
-            LEDGER_PENALTY.labels('ledger_penalties', 'dkg', name).set(ledger_entry['dkg_penalty'])
-            LEDGER_PENALTY.labels('ledger_penalties', 'performance', name).set(ledger_entry['performance_penalty'])
-            LEDGER_PENALTY.labels('ledger_penalties', 'total', name).set(ledger_entry['total_penalty'])
-            BLOCKAGE.labels('last_heartbeat', name).set(ledger_entry['last_heartbeat'])
+        # Clear metric so unstaked validators drop off
+        LEDGER_PENALTY.clear()
 
-    # Update HBBFT performance stats
-    HBBFT_PERF.clear()
+        for address, ledger_entry in penalty_ledger.items():
+            LEDGER_PENALTY.labels('ledger_penalties', 'tenure', ledger_entry['name'], ledger_entry['address']).set(ledger_entry['tenure_penalty'])
+            LEDGER_PENALTY.labels('ledger_penalties', 'dkg', ledger_entry['name'], ledger_entry['address']).set(ledger_entry['dkg_penalty'])
+            LEDGER_PENALTY.labels('ledger_penalties', 'performance', ledger_entry['name'], ledger_entry['address']).set(ledger_entry['performance_penalty'])
+            LEDGER_PENALTY.labels('ledger_penalties', 'total', ledger_entry['name'], ledger_entry['address']).set(ledger_entry['total_penalty'])
+            HEARTBEAT.labels(ledger_entry['name'], ledger_entry['address']).set(ledger_entry['last_heartbeat'])
 
     if hbbft_perf is not None:
+        # Clear metric so non-CG members drop off
+        HBBFT_PERF.clear()
+
         # Values common to all members of the CG
         bba_tot = hbbft_perf['blocks_since_epoch']
         seen_tot = hbbft_perf['max_seen']
@@ -221,9 +221,9 @@ def stats(miner: MinerJSONRPC):
 
     if peer_book_info is not None:
         connections = peer_book_info[0]['connection_count']
-        CONNECTIONS.labels('connections', my_label).set(connections)
+        CONNECTIONS.labels('connections', name).set(connections)
         sessions = len(peer_book_info[0]['sessions'])
-        SESSIONS.labels('sessions', my_label).set(sessions)
+        SESSIONS.labels('sessions', name).set(sessions)
 
 
 if __name__ == '__main__':
