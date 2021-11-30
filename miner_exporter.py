@@ -22,10 +22,12 @@ log.setLevel(logging.INFO)
 UPDATE_PERIOD = int(os.environ.get('UPDATE_PERIOD', 30))
 MINER_EXPORTER_PORT = int(os.environ.get('MINER_EXPORTER_PORT', 9825)) # 9-VAL on your phone
 VALIDATOR_JSONRPC_ADDRESS = os.environ.get('VALIDATOR_JSONRPC_ADDRESS', 'http://localhost:4467/')
-COLLECT_SYSTEM_USAGE = os.environ.get('COLLECT_SYSTEM_USAGE', False)
+
+COLLECT_SYSTEM_USAGE = os.environ.get('COLLECT_SYSTEM_USAGE', "").lower() in ("true", "t", "1", "y", "yes")
+ALL_HBBFT = os.environ.get('ALL_HBBFT', "").lower() in ("true", "t", "1", "y", "yes")
 # Gather the ledger penalities for all, instead of just "this" validator. This is a large
 # collection, so plan accordingly.
-ALL_PENALTIES = os.environ.get('ALL_PENALTIES', 0)
+ALL_PENALTIES = os.environ.get('ALL_PENALTIES', "").lower() in ("true", "t", "1", "y", "yes")
 
 
 # prometheus exporter types Gauge,Counter,Summary,Histogram,Info and Enum
@@ -61,9 +63,6 @@ if COLLECT_SYSTEM_USAGE:
     SYSTEM_USAGE = prometheus_client.Gauge('system_usage',
                                            'Hold current system resource usage',
                                            ['resource_type','hostname'])
-
-# Last known HBBFT performance stats for this validator.
-hval = {}
 
 # hostname of machine for use in system stats
 hostname = os.uname()[1]
@@ -201,36 +200,24 @@ def stats(miner: MinerJSONRPC):
             LEDGER_PENALTY.labels('ledger_penalties', 'total', name).set(ledger_entry['total_penalty'])
             BLOCKAGE.labels('last_heartbeat', name).set(ledger_entry['last_heartbeat'])
 
-    # Update HBBFT performance stats, if in CG
-    this_hbbft_perf = None
+    # Update HBBFT performance stats
+    HBBFT_PERF.clear()
+
     if hbbft_perf is not None:
-        for member in hbbft_perf['consensus_members']:
-            if member['address'] == addr:
-                this_hbbft_perf = member
-                break
-
-    if this_hbbft_perf is not None:
         # Values common to all members of the CG
-        hval['bba_tot'] = hbbft_perf['blocks_since_epoch']
-        hval['seen_tot'] = hbbft_perf['max_seen']
+        bba_tot = hbbft_perf['blocks_since_epoch']
+        seen_tot = hbbft_perf['max_seen']
 
-        # Values for this validator
-        hval['pen_val'] = this_hbbft_perf['penalty']
-        hval['tenure'] = this_hbbft_perf['tenure']
-        hval['seen_votes'] = this_hbbft_perf['seen_votes']
-        hval['seen_last_val'] = this_hbbft_perf['last_seen']
-        hval['bba_last_val'] = this_hbbft_perf['last_bba']
-        hval['bba_completions'] = this_hbbft_perf['bba_completions']
-
-    # always set these, that way they get reset when out of CG
-    HBBFT_PERF.labels('hbbft_perf','Penalty', my_label).set(hval.get('pen_val', 0))
-    HBBFT_PERF.labels('hbbft_perf','BBA_Total', my_label).set(hval.get('bba_tot', 0))
-    HBBFT_PERF.labels('hbbft_perf','BBA_Votes', my_label).set(hval.get('bba_completions', 0))
-    HBBFT_PERF.labels('hbbft_perf','Seen_Total', my_label).set(hval.get('seen_tot', 0))
-    HBBFT_PERF.labels('hbbft_perf','Seen_Votes', my_label).set(hval.get('seen_votes', 0))
-    HBBFT_PERF.labels('hbbft_perf','BBA_Last', my_label).set(hval.get('bba_last_val', 0))
-    HBBFT_PERF.labels('hbbft_perf','Seen_Last', my_label).set(hval.get('seen_last_val', 0))
-    HBBFT_PERF.labels('hbbft_perf','Tenure', my_label).set(hval.get('tenure', 0))
+        for member in hbbft_perf['consensus_members']:
+            if member['address'] == addr or ALL_HBBFT:
+                HBBFT_PERF.labels('hbbft_perf','Penalty', member['name']).set(member['penalty'])
+                HBBFT_PERF.labels('hbbft_perf','BBA_Total', member['name']).set(bba_tot)
+                HBBFT_PERF.labels('hbbft_perf','BBA_Votes', member['name']).set(member['bba_completions'])
+                HBBFT_PERF.labels('hbbft_perf','Seen_Total', member['name']).set(seen_tot)
+                HBBFT_PERF.labels('hbbft_perf','Seen_Votes', member['name']).set(member['seen_votes'])
+                HBBFT_PERF.labels('hbbft_perf','BBA_Last', member['name']).set(member['last_bba'])
+                HBBFT_PERF.labels('hbbft_perf','Seen_Last', member['name']).set(member['last_seen'])
+                HBBFT_PERF.labels('hbbft_perf','Tenure', member['name']).set(member['tenure'])
 
     if peer_book_info is not None:
         connections = peer_book_info[0]['connection_count']
