@@ -114,23 +114,22 @@ def stats(miner: MinerJSONRPC):
     except:
         log.error("in consensus fetch failure")
 
-    this_validator = None
     penalty_ledger = None
     try:
         if ALL_PENALTIES:
             penalty_ledger = miner.ledger_validators()
-            # turn a list of dicts into a dict of dicts, indexed on the angry-purple-tiger
-            penalty_ledger = {item['name']:item for item in miner.ledger_validators()}
+            # Turn a list of dicts into a dict of dicts, indexed on the angry-purple-tiger.
+            # While doing this, keep only staked validators.
+            penalty_ledger = {v['name']:v for v in miner.ledger_validators() if v['status'] == 'staked'}
         else:
             penalty_ledger = {addr: miner.ledger_validators(address=addr)}
 
-        this_validator = penalty_ledger[addr]
     except:
         log.error("validator fetch failure")
 
     owner = None
-    if this_validator is not None:
-        owner = this_validator['owner_address']
+    if penalty_ledger is not None and addr in penalty_ledger:
+        owner = penalty_ledger[addr]['owner_address']
 
     balance = None
     if owner is not None:
