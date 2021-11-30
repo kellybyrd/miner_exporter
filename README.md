@@ -64,11 +64,12 @@ sudo systemctl start validator_exporter
 
 ## Configuration
 
-The following have valid defaults, but you can change them:
+The following parameters can be used to modify configuration and behavior of the exporter:
 ```
 UPDATE_PERIOD  # seconds between scrapes, int
-VALIDATOR_CONTAINER_NAME # eg 'validator', string
 VALIDATOR_JSONRPC_ADDRESS # address to call jsonrpc methods, default: http://localhost:4467
 MINER_EXPORTER_PORT # port which miner_exporter listens on, default: 9825
 COLLECT_SYSTEM_USAGE # boolean, default: False
+ALL_HBBFT # collect HBBFT performance metrics on all validators, not just this validator, default: False
+ALL_PENALTIES # collect penalty and heartbeat metrics on all stakes validators, default: False
 ```
